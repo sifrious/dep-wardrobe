@@ -10,3 +10,8 @@ Adapters that create an execution owned by an external provider implement
 `providerExecutionAcknowledged()` with the provider's stable execution ID before
 emitting output or returning an outcome. Lifecycle and provider-binding policy
 remain outside Wardrobe.
+
+## License
+
+Copyright © 2026 Sifrious. All rights reserved. This is publicly viewable
+proprietary software, not open-source software. See [LICENSE.md](LICENSE.md).
