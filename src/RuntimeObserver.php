@@ -10,7 +10,7 @@ interface RuntimeObserver
     public function stdout(string $chunk): void;
     public function stderr(string $chunk): void;
 
-    /** @param array{id:string,kind:string,path:string,media_type:string,size:int,hash:string} $artifact */
+    /** @param array{id:string,kind:string,path:string,media_type:string,size:int,hash:string,created_at:string} $artifact */
     public function artifact(array $artifact): void;
 
     /** @param list<string> $allowedResponses */
