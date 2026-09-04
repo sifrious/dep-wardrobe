@@ -1,0 +1,160 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Sifrious\Wardrobe\LocalModel;
+
+final readonly class AdmissionPolicy
+{
+    public const VERSION = '1.0.0';
+
+    /** @var list<string> */
+    private const REQUIRED_CAPABILITIES = [
+        'harmony_format',
+        'tool_calling',
+        'function_calling',
+        'structured_outputs',
+    ];
+
+    /** @param array<string, mixed> $entry */
+    public function evaluate(array $entry): AdmissionDecision
+    {
+        $reasons = [];
+
+        $this->requireValue($entry, 'identity.model_id', $reasons);
+        $this->requireValue($entry, 'identity.model_version', $reasons);
+        $this->requireValue($entry, 'identity.upstream_revision', $reasons);
+        $this->requireValue($entry, 'developer.organization', $reasons);
+        $this->requireValue($entry, 'developer.organization_country', $reasons);
+        $this->requireValue($entry, 'developer.origin_evidence', $reasons);
+        $this->requireValue($entry, 'review.reviewed_at', $reasons);
+        $this->requireValue($entry, 'review.evidence', $reasons);
+
+        if ($this->value($entry, 'developer.origin') !== 'us-developed') {
+            $reasons[] = 'origin_not_us_developed';
+        }
+
+        if ($this->value($entry, 'developer.organization_country') !== 'US') {
+            $reasons[] = 'developer_organization_not_us';
+        }
+
+        $source = $this->value($entry, 'artifact.source');
+        if (!is_string($source) || filter_var($source, FILTER_VALIDATE_URL) === false || !str_starts_with($source, 'https://')) {
+            $reasons[] = 'artifact_source_not_trusted_https';
+        }
+
+        if ($this->value($entry, 'artifact.digest_algorithm') !== 'sha256') {
+            $reasons[] = 'artifact_digest_algorithm_not_sha256';
+        }
+
+        if (!is_string($this->value($entry, 'artifact.digest'))
+            || preg_match('/^[a-f0-9]{64}$/D', $this->value($entry, 'artifact.digest')) !== 1
+        ) {
+            $reasons[] = 'artifact_digest_invalid';
+        }
+
+        if (!is_int($this->value($entry, 'artifact.size_bytes')) || $this->value($entry, 'artifact.size_bytes') < 1) {
+            $reasons[] = 'artifact_size_unknown';
+        }
+
+        $this->requireValue($entry, 'license.spdx_id', $reasons);
+        $this->requireValue($entry, 'license.version', $reasons);
+        $this->requireValue($entry, 'license.source', $reasons);
+        $this->requireValue($entry, 'license.usage_policy_source', $reasons);
+        $this->requireKnownPermission($entry, 'license.commercial_use', $reasons);
+        $this->requireKnownPermission($entry, 'license.local_use', $reasons);
+        $this->requireKnownPermission($entry, 'license.redistribution', $reasons);
+        $this->requireKnownPermission($entry, 'license.hosted_commercial_use', $reasons);
+
+        if ($this->value($entry, 'license.commercial_use') !== 'permitted') {
+            $reasons[] = 'commercial_use_not_permitted';
+        }
+
+        if ($this->value($entry, 'license.local_use') !== 'permitted') {
+            $reasons[] = 'local_use_not_permitted';
+        }
+
+        if ($this->value($entry, 'license.redistribution') !== 'permitted') {
+            $reasons[] = 'redistribution_not_permitted';
+        }
+
+        if (!is_array($this->value($entry, 'license.notice_requirements'))) {
+            $reasons[] = 'notice_requirements_unknown';
+        }
+
+        $runtimes = $this->value($entry, 'runtime_compatibility');
+        if (!is_array($runtimes) || $runtimes === []) {
+            $reasons[] = 'supported_runtime_unknown';
+        }
+
+        $minimumMemory = $this->value($entry, 'hardware.minimum_memory_bytes');
+        $recommendedMemory = $this->value($entry, 'hardware.recommended_memory_bytes');
+        if (!is_int($minimumMemory) || $minimumMemory < 1) {
+            $reasons[] = 'minimum_memory_unknown';
+        }
+        if (!is_int($recommendedMemory) || $recommendedMemory < $minimumMemory) {
+            $reasons[] = 'recommended_memory_invalid';
+        }
+        $this->requireValue($entry, 'hardware.requirements', $reasons);
+
+        $contextWindow = $this->value($entry, 'capabilities.context_window_tokens');
+        if (!is_int($contextWindow) || $contextWindow < 1) {
+            $reasons[] = 'context_window_unknown';
+        }
+        foreach (self::REQUIRED_CAPABILITIES as $capability) {
+            if ($this->value($entry, "capabilities.$capability") !== true) {
+                $reasons[] = "required_capability_missing:$capability";
+            }
+        }
+
+        foreach (['local', 'byo_cloud', 'harness_managed_cloud'] as $mode) {
+            $this->requireKnownPermission($entry, "execution_modes.$mode", $reasons);
+        }
+        if ($this->value($entry, 'execution_modes.local') !== 'permitted') {
+            $reasons[] = 'local_execution_not_permitted';
+        }
+        if ($this->value($entry, 'license.hosted_commercial_use') !== 'permitted'
+            && ($this->value($entry, 'execution_modes.byo_cloud') === 'permitted'
+                || $this->value($entry, 'execution_modes.harness_managed_cloud') === 'permitted')
+        ) {
+            $reasons[] = 'hosted_execution_exceeds_license';
+        }
+
+        return new AdmissionDecision($reasons === [], array_values(array_unique($reasons)));
+    }
+
+    /** @param array<string, mixed> $entry
+     *  @param list<string> $reasons
+     */
+    private function requireValue(array $entry, string $path, array &$reasons): void
+    {
+        $value = $this->value($entry, $path);
+        if ($value === null || $value === '' || $value === []) {
+            $reasons[] = "missing_required_evidence:$path";
+        }
+    }
+
+    /** @param array<string, mixed> $entry
+     *  @param list<string> $reasons
+     */
+    private function requireKnownPermission(array $entry, string $path, array &$reasons): void
+    {
+        if (!in_array($this->value($entry, $path), ['permitted', 'prohibited'], true)) {
+            $reasons[] = "unknown_permission:$path";
+        }
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function value(array $entry, string $path): mixed
+    {
+        $value = $entry;
+        foreach (explode('.', $path) as $segment) {
+            if (!is_array($value) || !array_key_exists($segment, $value)) {
+                return null;
+            }
+            $value = $value[$segment];
+        }
+
+        return $value;
+    }
+}

@@ -1,0 +1,110 @@
+{
+  "catalogue_version": "1.0.0",
+  "policy_version": "1.0.0",
+  "entries": [
+    {
+      "identity": {
+        "model_id": "openai/gpt-oss-20b",
+        "model_version": "2025-08-05",
+        "upstream_revision": "f81fef1ddd90d214968e951a76834f1ded130a18"
+      },
+      "developer": {
+        "organization": "OpenAI",
+        "organization_country": "US",
+        "origin": "us-developed",
+        "origin_evidence": [
+          "https://openai.com/index/introducing-gpt-oss/",
+          "https://openai.com/policies/privacy-policy/"
+        ]
+      },
+      "artifact": {
+        "kind": "mxfp4-safetensors-weights",
+        "source": "https://huggingface.co/openai/gpt-oss-20b/resolve/f81fef1ddd90d214968e951a76834f1ded130a18/original/model.safetensors",
+        "digest_algorithm": "sha256",
+        "digest": "3340a61d1a0391e8c5b5d3463d18d4c48129a84bbc04a554c762c99020aa06ed",
+        "size_bytes": 13761300984
+      },
+      "license": {
+        "spdx_id": "Apache-2.0",
+        "version": "2.0",
+        "source": "https://huggingface.co/openai/gpt-oss-20b/blob/f81fef1ddd90d214968e951a76834f1ded130a18/LICENSE",
+        "usage_policy_source": "https://openai.com/policies/usage-policies/",
+        "commercial_use": "permitted",
+        "local_use": "permitted",
+        "redistribution": "permitted",
+        "hosted_commercial_use": "permitted",
+        "notice_requirements": [
+          "Provide recipients a copy of Apache License 2.0.",
+          "Mark modified files with prominent change notices.",
+          "Retain applicable copyright, patent, trademark, and attribution notices.",
+          "Include applicable NOTICE attributions when a NOTICE file is distributed."
+        ],
+        "constraints": [
+          "Apache License 2.0 terms apply.",
+          "OpenAI usage policies apply to use of the model.",
+          "No trademark rights are granted beyond describing origin and reproducing notices."
+        ]
+      },
+      "runtime_compatibility": [
+        {
+          "runtime": "transformers",
+          "version_constraint": ">=4.55",
+          "platforms": ["linux-cuda"],
+          "requirements": ["Harmony response format", "MXFP4-capable kernels or dequantization"]
+        },
+        {
+          "runtime": "vllm",
+          "version_constraint": ">=0.10.1",
+          "platforms": ["linux-cuda"],
+          "requirements": ["Harmony response format", "gpt-oss model support"]
+        },
+        {
+          "runtime": "openai-gpt-oss",
+          "version_constraint": "reference implementation at model revision",
+          "platforms": ["linux-cuda", "macos-apple-silicon"],
+          "requirements": ["Python 3.12", "Harmony response format"]
+        }
+      ],
+      "hardware": {
+        "minimum_memory_bytes": 17179869184,
+        "recommended_memory_bytes": 25769803776,
+        "requirements": [
+          "At least 16 GiB addressable accelerator or unified memory for MXFP4 weights.",
+          "Native MXFP4 with Transformers requires NVIDIA Hopper, Blackwell, or later; other hardware may dequantize and require more memory.",
+          "Runtime, context length, and cache configuration can increase memory above the weights-only minimum."
+        ],
+        "recommended": [
+          "24 GiB or more addressable accelerator or unified memory for runtime and context overhead.",
+          "A runtime/platform combination listed in runtime_compatibility."
+        ]
+      },
+      "capabilities": {
+        "context_window_tokens": 131072,
+        "harmony_format": true,
+        "tool_calling": true,
+        "function_calling": true,
+        "structured_outputs": true
+      },
+      "execution_modes": {
+        "local": "permitted",
+        "byo_cloud": "permitted",
+        "harness_managed_cloud": "permitted"
+      },
+      "review": {
+        "reviewed_at": "2026-09-04",
+        "evidence": [
+          "https://openai.com/index/introducing-gpt-oss/",
+          "https://huggingface.co/openai/gpt-oss-20b/blob/f81fef1ddd90d214968e951a76834f1ded130a18/README.md",
+          "https://huggingface.co/openai/gpt-oss-20b/blob/f81fef1ddd90d214968e951a76834f1ded130a18/original/model.safetensors",
+          "https://huggingface.co/openai/gpt-oss-20b/blob/f81fef1ddd90d214968e951a76834f1ded130a18/LICENSE",
+          "https://github.com/openai/gpt-oss",
+          "https://raw.githubusercontent.com/openai/openai-cookbook/main/articles/gpt-oss/run-transformers.md"
+        ]
+      },
+      "admission": {
+        "decision": "approved",
+        "rejection_reasons": []
+      }
+    }
+  ]
+}
