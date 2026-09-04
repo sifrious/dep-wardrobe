@@ -94,6 +94,18 @@ references into usage records.
 See [the MME-1230 compatibility review](docs/mme-1230-provider-account-usage-review.md)
 for the reviewed boundaries and verification matrix.
 
+## Trusted local-model catalogue
+
+Wardrobe also publishes a versioned, integrity-checked local-model catalogue and
+deterministic admission contract. `TrustedModelCatalogue::bundled()` exposes the
+approved entries. Managed installers must use `admitArtifact()` with the exact
+pinned source and SHA-256, and Runs must retain the value from
+`provenanceFor()`.
+
+The catalogue is data and policy only. Loading it never downloads or installs a
+model. See [policy 1.0.0](docs/local-model-admission-policy-v1.md) and the
+[catalogue schema](resources/local-model-catalogue.schema.v1.json).
+
 ## License
 
 Copyright © 2026 Sifrious. All rights reserved. This is publicly viewable

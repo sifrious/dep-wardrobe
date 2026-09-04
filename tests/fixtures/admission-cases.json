@@ -1,0 +1,55 @@
+[
+  {
+    "name": "unknown developer origin fails closed",
+    "changes": {
+      "developer.origin": "unknown"
+    },
+    "approved": false,
+    "rejection_reasons": ["origin_not_us_developed"]
+  },
+  {
+    "name": "unknown license fails closed",
+    "changes": {
+      "license.local_use": "unknown"
+    },
+    "approved": false,
+    "rejection_reasons": [
+      "unknown_permission:license.local_use",
+      "local_use_not_permitted"
+    ]
+  },
+  {
+    "name": "open weights do not imply redistribution",
+    "changes": {
+      "license.redistribution": "prohibited"
+    },
+    "approved": false,
+    "rejection_reasons": ["redistribution_not_permitted"]
+  },
+  {
+    "name": "hosted use may differ from local use",
+    "changes": {
+      "license.hosted_commercial_use": "prohibited",
+      "execution_modes.byo_cloud": "prohibited",
+      "execution_modes.harness_managed_cloud": "prohibited"
+    },
+    "approved": true,
+    "rejection_reasons": []
+  },
+  {
+    "name": "hosted execution cannot exceed license",
+    "changes": {
+      "license.hosted_commercial_use": "prohibited"
+    },
+    "approved": false,
+    "rejection_reasons": ["hosted_execution_exceeds_license"]
+  },
+  {
+    "name": "runtime names without compatibility evidence fail closed",
+    "changes": {
+      "runtime_compatibility": ["transformers"]
+    },
+    "approved": false,
+    "rejection_reasons": ["runtime_compatibility_invalid"]
+  }
+]
