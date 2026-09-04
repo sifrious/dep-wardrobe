@@ -43,5 +43,13 @@
     },
     "approved": false,
     "rejection_reasons": ["hosted_execution_exceeds_license"]
+  },
+  {
+    "name": "runtime names without compatibility evidence fail closed",
+    "changes": {
+      "runtime_compatibility": ["transformers"]
+    },
+    "approved": false,
+    "rejection_reasons": ["runtime_compatibility_invalid"]
   }
 ]

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Sifrious\Wardrobe\LocalModel;
 
+use DateTimeImmutable;
+
 final readonly class AdmissionPolicy
 {
     public const VERSION = '1.0.0';
@@ -26,9 +28,9 @@ final readonly class AdmissionPolicy
         $this->requireValue($entry, 'identity.upstream_revision', $reasons);
         $this->requireValue($entry, 'developer.organization', $reasons);
         $this->requireValue($entry, 'developer.organization_country', $reasons);
-        $this->requireValue($entry, 'developer.origin_evidence', $reasons);
-        $this->requireValue($entry, 'review.reviewed_at', $reasons);
-        $this->requireValue($entry, 'review.evidence', $reasons);
+        $this->requireUriList($entry, 'developer.origin_evidence', $reasons);
+        $this->requireDate($entry, 'review.reviewed_at', $reasons);
+        $this->requireUriList($entry, 'review.evidence', $reasons);
 
         if ($this->value($entry, 'developer.origin') !== 'us-developed') {
             $reasons[] = 'origin_not_us_developed';
@@ -59,8 +61,8 @@ final readonly class AdmissionPolicy
 
         $this->requireValue($entry, 'license.spdx_id', $reasons);
         $this->requireValue($entry, 'license.version', $reasons);
-        $this->requireValue($entry, 'license.source', $reasons);
-        $this->requireValue($entry, 'license.usage_policy_source', $reasons);
+        $this->requireUri($entry, 'license.source', $reasons);
+        $this->requireUri($entry, 'license.usage_policy_source', $reasons);
         $this->requireKnownPermission($entry, 'license.commercial_use', $reasons);
         $this->requireKnownPermission($entry, 'license.local_use', $reasons);
         $this->requireKnownPermission($entry, 'license.redistribution', $reasons);
@@ -78,13 +80,28 @@ final readonly class AdmissionPolicy
             $reasons[] = 'redistribution_not_permitted';
         }
 
-        if (!is_array($this->value($entry, 'license.notice_requirements'))) {
+        if (!$this->isNonEmptyStringList($this->value($entry, 'license.notice_requirements'), allowEmpty: true)) {
             $reasons[] = 'notice_requirements_unknown';
+        }
+        if (!$this->isNonEmptyStringList($this->value($entry, 'license.constraints'))) {
+            $reasons[] = 'license_constraints_unknown';
         }
 
         $runtimes = $this->value($entry, 'runtime_compatibility');
         if (!is_array($runtimes) || $runtimes === []) {
             $reasons[] = 'supported_runtime_unknown';
+        } else {
+            foreach ($runtimes as $runtime) {
+                if (!is_array($runtime)
+                    || !$this->isNonEmptyString($runtime['runtime'] ?? null)
+                    || !$this->isNonEmptyString($runtime['version_constraint'] ?? null)
+                    || !$this->isNonEmptyStringList($runtime['platforms'] ?? null)
+                    || !$this->isNonEmptyStringList($runtime['requirements'] ?? null, allowEmpty: true)
+                ) {
+                    $reasons[] = 'runtime_compatibility_invalid';
+                    break;
+                }
+            }
         }
 
         $minimumMemory = $this->value($entry, 'hardware.minimum_memory_bytes');
@@ -92,10 +109,18 @@ final readonly class AdmissionPolicy
         if (!is_int($minimumMemory) || $minimumMemory < 1) {
             $reasons[] = 'minimum_memory_unknown';
         }
-        if (!is_int($recommendedMemory) || $recommendedMemory < $minimumMemory) {
+        if (!is_int($recommendedMemory)
+            || !is_int($minimumMemory)
+            || $recommendedMemory < $minimumMemory
+        ) {
             $reasons[] = 'recommended_memory_invalid';
         }
-        $this->requireValue($entry, 'hardware.requirements', $reasons);
+        if (!$this->isNonEmptyStringList($this->value($entry, 'hardware.requirements'))) {
+            $reasons[] = 'hardware_requirements_unknown';
+        }
+        if (!$this->isNonEmptyStringList($this->value($entry, 'hardware.recommended'))) {
+            $reasons[] = 'recommended_hardware_unknown';
+        }
 
         $contextWindow = $this->value($entry, 'capabilities.context_window_tokens');
         if (!is_int($contextWindow) || $contextWindow < 1) {
@@ -142,6 +167,67 @@ final readonly class AdmissionPolicy
         if (!in_array($this->value($entry, $path), ['permitted', 'prohibited'], true)) {
             $reasons[] = "unknown_permission:$path";
         }
+    }
+
+    /** @param array<string, mixed> $entry
+     *  @param list<string> $reasons
+     */
+    private function requireUri(array $entry, string $path, array &$reasons): void
+    {
+        $value = $this->value($entry, $path);
+        if (!is_string($value) || filter_var($value, FILTER_VALIDATE_URL) === false) {
+            $reasons[] = "invalid_evidence_uri:$path";
+        }
+    }
+
+    /** @param array<string, mixed> $entry
+     *  @param list<string> $reasons
+     */
+    private function requireUriList(array $entry, string $path, array &$reasons): void
+    {
+        $values = $this->value($entry, $path);
+        if (!is_array($values) || $values === []) {
+            $reasons[] = "missing_required_evidence:$path";
+            return;
+        }
+        foreach ($values as $value) {
+            if (!is_string($value) || filter_var($value, FILTER_VALIDATE_URL) === false) {
+                $reasons[] = "invalid_evidence_uri:$path";
+                return;
+            }
+        }
+    }
+
+    /** @param array<string, mixed> $entry
+     *  @param list<string> $reasons
+     */
+    private function requireDate(array $entry, string $path, array &$reasons): void
+    {
+        $value = $this->value($entry, $path);
+        $date = is_string($value) ? DateTimeImmutable::createFromFormat('!Y-m-d', $value) : false;
+        if ($date === false || $date->format('Y-m-d') !== $value) {
+            $reasons[] = "invalid_date:$path";
+        }
+    }
+
+    private function isNonEmptyString(mixed $value): bool
+    {
+        return is_string($value) && trim($value) !== '';
+    }
+
+    private function isNonEmptyStringList(mixed $value, bool $allowEmpty = false): bool
+    {
+        if (!is_array($value) || (!$allowEmpty && $value === [])) {
+            return false;
+        }
+
+        foreach ($value as $item) {
+            if (!$this->isNonEmptyString($item)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** @param array<string, mixed> $entry */
