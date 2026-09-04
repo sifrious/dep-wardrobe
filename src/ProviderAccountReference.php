@@ -52,9 +52,11 @@ final readonly class ProviderAccountReference
             return false;
         }
 
-        return $model === null
-            || $this->allowedModels === []
-            || in_array($model, $this->allowedModels, true);
+        if ($this->allowedModels !== []) {
+            return $model !== null && in_array($model, $this->allowedModels, true);
+        }
+
+        return true;
     }
 
     /** @return array<string, mixed> */

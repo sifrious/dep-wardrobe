@@ -32,7 +32,11 @@ It cannot carry credentials, authorization headers, OAuth material, SDK objects,
 or arbitrary metadata. The host-owned adapter resolves `connectionId` through its
 secure credential store at invocation time. An external provider account is
 optional on `RuntimeInvocation`, so a local runner or local model can execute
-without manufacturing a provider account.
+without manufacturing a provider account. Hosts dispatch through
+`RuntimeAdapterInvoker`; it requires an account-scoped reference and provider
+observer for every `ProviderRuntimeAdapter`, and rejects provider accounts on
+local adapters. Model allowlists fail closed when the invocation does not name a
+model.
 
 These identities remain distinct:
 
@@ -70,17 +74,22 @@ is absent unless supplied. Estimated or derived cost remains visibly distinct.
 
 `reconciliationId` supplies the stable per-provider observation key. A durable
 `UsageRecorder` must enforce atomic uniqueness on
-`AiUsage::reconciliationKey()`. `UsageReconciler` classifies an identical
-redelivery as a duplicate and accepts a changed observation only when
-`replayedFromUsageId` names the event being corrected. A real retry has a new
-reconciliation identity, incremented attempt number, and `retryOfAttemptId`.
-`UsageReader` exposes normalized records by run without credentials or SDK
-types.
+`AiUsage::reconciliationKey()`, which is scoped by either a provider account or
+an explicit local-runtime identity. It deliberately does not include `runId`, so
+one provider request cannot be counted again under another run.
+`UsageReconciler` classifies an identical redelivery as a duplicate and accepts a
+changed observation only when `replayedFromUsageId` names the event being
+corrected. A real retry has a new reconciliation identity, incremented attempt
+number, and `retryOfAttemptId`. `UsageReader` exposes normalized records by run
+without credentials or SDK types. `InMemoryUsageRepository` is a conformance
+fixture; production stores must use a durable unique constraint and preserve
+superseded evidence.
 
-Reconciliation metadata is limited to non-secret scalar evidence and rejects
-secret-bearing field names. Do not put prompts, provider response objects,
-tokens, cookies, authorization headers, or credential references into usage
-records.
+Reconciliation metadata accepts only the documented scalar evidence keys
+(`billing_tier`, `invoice_line_id`, `project_id`, `region`, `usage_scope`, and
+`workspace_id`). Arbitrary payloads and headers are rejected. Do not put prompts,
+provider response objects, tokens, cookies, authorization headers, or credential
+references into usage records.
 
 See [the MME-1230 compatibility review](docs/mme-1230-provider-account-usage-review.md)
 for the reviewed boundaries and verification matrix.

@@ -11,6 +11,17 @@ final readonly class AiUsage
 {
     public const CONTRACT_VERSION = '1';
 
+    public ?string $providerAccountId;
+
+    private const RECONCILIATION_METADATA_KEYS = [
+        'billing_tier',
+        'invoice_line_id',
+        'project_id',
+        'region',
+        'usage_scope',
+        'workspace_id',
+    ];
+
     /**
      * @param list<UsageQuantity> $quantities
      * @param array<string, bool|int|float|string|null> $reconciliationMetadata
@@ -22,13 +33,14 @@ final readonly class AiUsage
         public string $attemptId,
         public int $attemptNumber,
         public string $provider,
+        public UsageAccountScope $accountScope,
+        public string $accountScopeId,
         public string $runtime,
         public string $operation,
         public string $reconciliationId,
         public string $observedAt,
         public array $quantities,
         public ?string $model = null,
-        public ?string $providerAccountId = null,
         public ?string $providerExecutionId = null,
         public ?string $providerRequestId = null,
         public ?string $providerUsageId = null,
@@ -44,6 +56,7 @@ final readonly class AiUsage
             $logicalRequestId,
             $attemptId,
             $provider,
+            $accountScopeId,
             $runtime,
             $operation,
             $reconciliationId,
@@ -52,6 +65,10 @@ final readonly class AiUsage
                 throw new InvalidArgumentException('Usage identity fields must not be empty.');
             }
         }
+
+        $this->providerAccountId = $accountScope === UsageAccountScope::ProviderAccount
+            ? $accountScopeId
+            : null;
 
         if ($attemptNumber < 1) {
             throw new InvalidArgumentException('Usage attempt number must be positive.');
@@ -81,19 +98,24 @@ final readonly class AiUsage
         }
 
         foreach ($reconciliationMetadata as $key => $value) {
-            if (!is_string($key) || trim($key) === '' || !is_scalar($value) && $value !== null) {
-                throw new InvalidArgumentException('Reconciliation metadata must contain named scalar values.');
+            if (!is_string($key) || !in_array($key, self::RECONCILIATION_METADATA_KEYS, true)) {
+                throw new InvalidArgumentException('Reconciliation metadata contains an unsupported field.');
             }
 
-            if (preg_match('/(?:secret|token|password|credential|authorization|api.?key|private.?key|cookie|session)/i', $key) === 1) {
-                throw new InvalidArgumentException('Reconciliation metadata must not contain secret-bearing fields.');
+            if (!is_scalar($value) && $value !== null) {
+                throw new InvalidArgumentException('Reconciliation metadata must contain named scalar values.');
             }
         }
     }
 
     public function reconciliationKey(): string
     {
-        return $this->provider.':'.$this->reconciliationId;
+        return implode(':', [
+            $this->provider,
+            $this->accountScope->value,
+            $this->accountScopeId,
+            $this->reconciliationId,
+        ]);
     }
 
     /**
@@ -121,6 +143,8 @@ final readonly class AiUsage
             'retry_of_attempt_id' => $this->retryOfAttemptId,
             'replayed_from_usage_id' => $this->replayedFromUsageId,
             'provider' => $this->provider,
+            'account_scope' => $this->accountScope->value,
+            'account_scope_id' => $this->accountScopeId,
             'runtime' => $this->runtime,
             'model' => $this->model,
             'operation' => $this->operation,

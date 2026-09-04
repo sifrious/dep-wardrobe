@@ -22,8 +22,11 @@ This change resolves those package-level findings:
    reconciliation identities, and timestamps using SDK-free scalar values.
 4. `UsageRecorder`, `UsageReader`, and `UsageReconciler` define write, read,
    duplicate, correction, and retry semantics.
-5. Secret-bearing fields are absent from account references and rejected in
-   reconciliation metadata.
+5. `ProviderRuntimeInvocation` makes account-less provider adapter calls
+   unrepresentable; `RuntimeAdapterInvoker` also enforces provider
+   acknowledgement observation.
+6. Secret-bearing fields are absent from account references; reconciliation
+   metadata is restricted to an allowlist of scalar evidence fields.
 
 ## Compatibility matrix
 
@@ -33,8 +36,8 @@ This change resolves those package-level findings:
 | MME-1859 Amp accounts | Compatible | The portable reference identifies an account-owned connection and Amp account/workspace without OAuth material. Burdgeon remains responsible for callback handling, encrypted storage, project selection, and readiness. |
 | Local runners without external accounts | Compatible | `RuntimeInvocation::$providerAccount` is nullable; local usage can omit `providerAccountId`. |
 | Usage records | Resolved | Normalized quantities and costs retain units and measured/provider-reported/estimated/derived provenance. |
-| Account-scoped provider connections | Resolved at package seam | `ownerAccountId` plus `connectionId` makes scope explicit. Hosts must resolve and authorize the connection through the authenticated owner, never from global mutable settings. |
-| Secret isolation | Resolved at package seam | No credential field or arbitrary account metadata exists. Usage metadata rejects secret-bearing keys. Secure storage and credential lookup stay in host adapters. |
+| Account-scoped provider connections | Resolved at package seam | `ownerAccountId` plus `connectionId` makes scope explicit. Provider adapters accept only `ProviderRuntimeInvocation`, which cannot exist without an account. Hosts must resolve and authorize the connection through the authenticated owner, never from global mutable settings. |
+| Secret isolation | Resolved at package seam | No credential field or arbitrary account metadata exists. Usage metadata allows only documented scalar reconciliation fields. Secure storage and credential lookup stay in host adapters. |
 | Entitlement vs provider authorization | Explicitly separate | Product entitlement, execution authorization, connection ownership, and provider readiness are four independent checks. Account availability is not proof of product access or dispatch permission. |
 | Retry/replay accounting | Resolved | Retries have attempt lineage and a new reconciliation ID. Redelivery uses one stable reconciliation key; changed records require explicit correction lineage. |
 
@@ -49,7 +52,8 @@ itself. A conforming consumer must:
 3. resolve credentials only inside the provider adapter;
 4. fail closed when connection ownership, state, provider authorization, project
    selection, or readiness no longer matches;
-5. atomically unique-index the usage reconciliation key; and
+5. atomically unique-index the account-scope-and-provider-scoped usage
+   reconciliation key; and
 6. store retries as distinct attempts while treating exact redelivery as a
    duplicate and corrections as lineage-bearing reconciliation.
 
@@ -67,7 +71,8 @@ The contract suite covers:
 - provider-reported, measured, estimated, and cost provenance;
 - one retry with explicit attempt lineage;
 - exact replay deduplication and corrected reconciliation; and
-- rejection of secret-bearing usage metadata.
+- recorder-level replay behavior and account-scoped reconciliation keys; and
+- rejection of secret-bearing or arbitrary payload metadata.
 
 All Amp values are inert fixtures. No live credential, callback, provider token,
 or usable account secret is included.

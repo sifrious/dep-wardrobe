@@ -7,10 +7,18 @@ namespace Sifrious\Wardrobe\Tests;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use Sifrious\Wardrobe\AiUsage;
+use Sifrious\Wardrobe\InMemoryUsageRepository;
 use Sifrious\Wardrobe\ProviderAccountReference;
 use Sifrious\Wardrobe\ProviderAccountState;
+use Sifrious\Wardrobe\ProviderRuntimeAdapter;
+use Sifrious\Wardrobe\ProviderRuntimeInvocation;
+use Sifrious\Wardrobe\ProviderRuntimeObserver;
+use Sifrious\Wardrobe\RuntimeAdapterInvoker;
 use Sifrious\Wardrobe\RuntimeInvocation;
+use Sifrious\Wardrobe\RuntimeObserver;
+use Sifrious\Wardrobe\RuntimeOutcome;
 use Sifrious\Wardrobe\UsageCost;
+use Sifrious\Wardrobe\UsageAccountScope;
 use Sifrious\Wardrobe\UsageQuantity;
 use Sifrious\Wardrobe\UsageReconciler;
 use Sifrious\Wardrobe\UsageRecordDisposition;
@@ -34,6 +42,7 @@ final class ProviderAccountAndUsageContractTest extends TestCase
             ),
         );
         self::assertTrue($account->supports('amp-orb', 'claude-sonnet'));
+        self::assertFalse($account->supports('amp-orb'));
         self::assertFalse($account->supports('local-llama'));
     }
 
@@ -48,6 +57,59 @@ final class ProviderAccountAndUsageContractTest extends TestCase
         );
 
         self::assertNull($invocation->providerAccount);
+    }
+
+    public function test_external_adapter_cannot_run_without_account_scoped_connection(): void
+    {
+        $adapter = new class implements ProviderRuntimeAdapter {
+            public function supports(string $runtime): bool
+            {
+                return $runtime === 'amp-orb';
+            }
+
+            public function invoke(ProviderRuntimeInvocation $invocation, ProviderRuntimeObserver $observer): RuntimeOutcome
+            {
+                return new RuntimeOutcome('completed');
+            }
+        };
+
+        $observer = new class implements ProviderRuntimeObserver {
+            public function providerExecutionAcknowledged(string $providerExecutionId): void {}
+
+            public function event(string $type, array $payload = []): void {}
+
+            public function stdout(string $chunk): void {}
+
+            public function stderr(string $chunk): void {}
+
+            public function artifact(array $artifact): void {}
+
+            public function needsInput(string $prompt, array $allowedResponses, string $resumeToken): void {}
+
+            public function continuation(): ?array
+            {
+                return null;
+            }
+
+            public function cancellationRequested(): bool
+            {
+                return false;
+            }
+        };
+
+        $this->expectException(InvalidArgumentException::class);
+
+        (new RuntimeAdapterInvoker())->invoke(
+            $adapter,
+            new RuntimeInvocation(
+                runId: 'run-amp-without-account',
+                runtime: 'amp-orb',
+                workspacePath: '/workspace/repository',
+                prompt: 'Summarize the repository.',
+                timeoutSeconds: 60,
+            ),
+            $observer,
+        );
     }
 
     public function test_unavailable_or_incompatible_provider_account_cannot_be_selected(): void
@@ -105,6 +167,7 @@ final class ProviderAccountAndUsageContractTest extends TestCase
             runtime: 'amp-orb',
             reconciliationId: 'amp-request-1',
             quantities: [new UsageQuantity('output', 'token', '100', UsageValueSource::ProviderReported)],
+            providerAccountId: 'provider-account-1',
             providerRequestId: 'amp-request-1',
         );
         $duplicate = self::usage(
@@ -113,6 +176,7 @@ final class ProviderAccountAndUsageContractTest extends TestCase
             runtime: 'amp-orb',
             reconciliationId: 'amp-request-1',
             quantities: [new UsageQuantity('output', 'token', '100', UsageValueSource::ProviderReported)],
+            providerAccountId: 'provider-account-1',
             providerRequestId: 'amp-request-1',
             replayedFromUsageId: 'usage-1',
         );
@@ -122,12 +186,75 @@ final class ProviderAccountAndUsageContractTest extends TestCase
             runtime: 'amp-orb',
             reconciliationId: 'amp-request-1',
             quantities: [new UsageQuantity('output', 'token', '110', UsageValueSource::ProviderReported)],
+            providerAccountId: 'provider-account-1',
             providerRequestId: 'amp-request-1',
             replayedFromUsageId: 'usage-1',
         );
 
         self::assertSame(UsageRecordDisposition::Duplicate, UsageReconciler::classify($existing, $duplicate));
         self::assertSame(UsageRecordDisposition::Reconciled, UsageReconciler::classify($existing, $corrected));
+    }
+
+    public function test_recorder_does_not_double_count_replay_and_retains_corrected_observation(): void
+    {
+        $repository = new InMemoryUsageRepository();
+        $existing = self::usage(
+            id: 'usage-1',
+            provider: 'amp',
+            runtime: 'amp-orb',
+            reconciliationId: 'amp-request-1',
+            quantities: [new UsageQuantity('output', 'token', '100', UsageValueSource::ProviderReported)],
+            providerAccountId: 'provider-account-1',
+            providerRequestId: 'amp-request-1',
+        );
+        $duplicate = self::usage(
+            id: 'usage-duplicate',
+            provider: 'amp',
+            runtime: 'amp-orb',
+            reconciliationId: 'amp-request-1',
+            quantities: [new UsageQuantity('output', 'token', '100', UsageValueSource::ProviderReported)],
+            providerAccountId: 'provider-account-1',
+            providerRequestId: 'amp-request-1',
+            replayedFromUsageId: 'usage-1',
+        );
+        $corrected = self::usage(
+            id: 'usage-corrected',
+            provider: 'amp',
+            runtime: 'amp-orb',
+            reconciliationId: 'amp-request-1',
+            quantities: [new UsageQuantity('output', 'token', '110', UsageValueSource::ProviderReported)],
+            providerAccountId: 'provider-account-1',
+            providerRequestId: 'amp-request-1',
+            replayedFromUsageId: 'usage-1',
+        );
+
+        self::assertSame(UsageRecordDisposition::Recorded, $repository->record($existing)->disposition);
+        self::assertSame(UsageRecordDisposition::Duplicate, $repository->record($duplicate)->disposition);
+        self::assertCount(1, iterator_to_array($repository->forRun('run-1')));
+        self::assertSame(UsageRecordDisposition::Reconciled, $repository->record($corrected)->disposition);
+        self::assertSame('usage-corrected', iterator_to_array($repository->forRun('run-1'))[0]->id);
+    }
+
+    public function test_reconciliation_keys_are_scoped_by_run_and_provider_account(): void
+    {
+        $first = self::usage(
+            id: 'usage-account-1',
+            provider: 'amp',
+            runtime: 'amp-orb',
+            reconciliationId: 'request-1',
+            quantities: [new UsageQuantity('request', 'count', '1', UsageValueSource::ProviderReported)],
+            providerAccountId: 'provider-account-1',
+        );
+        $second = self::usage(
+            id: 'usage-account-2',
+            provider: 'amp',
+            runtime: 'amp-orb',
+            reconciliationId: 'request-1',
+            quantities: [new UsageQuantity('request', 'count', '1', UsageValueSource::ProviderReported)],
+            providerAccountId: 'provider-account-2',
+        );
+
+        self::assertNotSame($first->reconciliationKey(), $second->reconciliationKey());
     }
 
     public function test_retry_has_distinct_reconciliation_identity_and_explicit_attempt_lineage(): void
@@ -138,6 +265,7 @@ final class ProviderAccountAndUsageContractTest extends TestCase
             runtime: 'amp-orb',
             reconciliationId: 'amp-request-1',
             quantities: [new UsageQuantity('request', 'count', '1', UsageValueSource::ProviderReported)],
+            providerAccountId: 'provider-account-1',
             providerRequestId: 'amp-request-1',
         );
         $retry = self::usage(
@@ -146,6 +274,7 @@ final class ProviderAccountAndUsageContractTest extends TestCase
             runtime: 'amp-orb',
             reconciliationId: 'amp-request-2',
             quantities: [new UsageQuantity('request', 'count', '1', UsageValueSource::ProviderReported)],
+            providerAccountId: 'provider-account-1',
             providerRequestId: 'amp-request-2',
             attemptId: 'attempt-2',
             attemptNumber: 2,
@@ -166,7 +295,23 @@ final class ProviderAccountAndUsageContractTest extends TestCase
             runtime: 'amp-orb',
             reconciliationId: 'amp-request-secret',
             quantities: [new UsageQuantity('request', 'count', '1', UsageValueSource::ProviderReported)],
+            providerAccountId: 'provider-account-1',
             reconciliationMetadata: ['access_token' => 'not-a-real-token'],
+        );
+    }
+
+    public function test_arbitrary_payload_metadata_is_rejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        self::usage(
+            id: 'usage-payload',
+            provider: 'amp',
+            runtime: 'amp-orb',
+            reconciliationId: 'amp-request-payload',
+            quantities: [new UsageQuantity('request', 'count', '1', UsageValueSource::ProviderReported)],
+            providerAccountId: 'provider-account-1',
+            reconciliationMetadata: ['headers' => 'not-accepted'],
         );
     }
 
@@ -211,13 +356,16 @@ final class ProviderAccountAndUsageContractTest extends TestCase
             attemptId: $attemptId,
             attemptNumber: $attemptNumber,
             provider: $provider,
+            accountScope: $providerAccountId === null
+                ? UsageAccountScope::LocalRuntime
+                : UsageAccountScope::ProviderAccount,
+            accountScopeId: $providerAccountId ?? 'local-runner-1',
             runtime: $runtime,
             operation: 'agent_execution',
             reconciliationId: $reconciliationId,
             observedAt: '2026-09-04T13:00:00+00:00',
             quantities: $quantities,
             model: $provider === 'amp' ? 'claude-sonnet' : 'llama',
-            providerAccountId: $providerAccountId,
             providerExecutionId: $provider === 'amp' ? 'orb-thread-1' : null,
             providerRequestId: $providerRequestId,
             retryOfAttemptId: $retryOfAttemptId,
