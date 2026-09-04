@@ -235,7 +235,7 @@ final class ProviderAccountAndUsageContractTest extends TestCase
         self::assertSame('usage-corrected', iterator_to_array($repository->forRun('run-1'))[0]->id);
     }
 
-    public function test_reconciliation_keys_are_scoped_by_run_and_provider_account(): void
+    public function test_reconciliation_keys_are_scoped_by_provider_account(): void
     {
         $first = self::usage(
             id: 'usage-account-1',
@@ -252,6 +252,28 @@ final class ProviderAccountAndUsageContractTest extends TestCase
             reconciliationId: 'request-1',
             quantities: [new UsageQuantity('request', 'count', '1', UsageValueSource::ProviderReported)],
             providerAccountId: 'provider-account-2',
+        );
+
+        self::assertNotSame($first->reconciliationKey(), $second->reconciliationKey());
+    }
+
+    public function test_reconciliation_key_encoding_cannot_collide_on_delimiters(): void
+    {
+        $first = self::usage(
+            id: 'usage-delimiter-1',
+            provider: 'amp',
+            runtime: 'amp-orb',
+            reconciliationId: 'a:b',
+            quantities: [new UsageQuantity('request', 'count', '1', UsageValueSource::ProviderReported)],
+            providerAccountId: 'runner',
+        );
+        $second = self::usage(
+            id: 'usage-delimiter-2',
+            provider: 'amp',
+            runtime: 'amp-orb',
+            reconciliationId: 'b',
+            quantities: [new UsageQuantity('request', 'count', '1', UsageValueSource::ProviderReported)],
+            providerAccountId: 'runner:a',
         );
 
         self::assertNotSame($first->reconciliationKey(), $second->reconciliationKey());

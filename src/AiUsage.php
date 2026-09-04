@@ -110,12 +110,14 @@ final readonly class AiUsage
 
     public function reconciliationKey(): string
     {
-        return implode(':', [
-            $this->provider,
-            $this->accountScope->value,
-            $this->accountScopeId,
-            $this->reconciliationId,
-        ]);
+        $identity = json_encode([
+            'provider' => $this->provider,
+            'account_scope' => $this->accountScope->value,
+            'account_scope_id' => $this->accountScopeId,
+            'reconciliation_id' => $this->reconciliationId,
+        ], JSON_THROW_ON_ERROR);
+
+        return 'usage:v1:'.hash('sha256', $identity);
     }
 
     /**
